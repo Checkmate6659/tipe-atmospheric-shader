@@ -1,0 +1,78 @@
+[gd_scene load_steps=15 format=3 uid="uid://c5idoinq51hna"]
+
+[ext_resource type="Texture2D" uid="uid://qgtl5yiplij7" path="res://earth_mid.png" id="1"]
+[ext_resource type="Texture2D" uid="uid://dp1ar3s35rci6" path="res://earth_normals_lowres.jpg" id="2"]
+[ext_resource type="Script" uid="uid://b1nrbd7uc3wfh" path="res://DebugInfo.gd" id="3"]
+[ext_resource type="Script" uid="uid://dw10dwab7daf" path="res://CameraController.gd" id="4"]
+[ext_resource type="Script" uid="uid://b3dhul6l2qty0" path="res://EarthSpin.gd" id="5"]
+[ext_resource type="Environment" uid="uid://bt1lnjsmogkgm" path="res://default_env.tres" id="5_l4fe7"]
+[ext_resource type="ArrayMesh" uid="uid://m14gi11abqnd" path="res://lv6.obj" id="7"]
+[ext_resource type="Shader" uid="uid://n0pwmgmyok47" path="res://AtmoPostProcessFast.gdshader" id="7_l4fe7"]
+[ext_resource type="Shader" uid="uid://dcupfs4n1qtbe" path="res://AtmoPostProcess.gdshader" id="9"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_w2fgy"]
+albedo_texture = ExtResource("1")
+normal_enabled = true
+normal_texture = ExtResource("2")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_x3svv"]
+render_priority = 0
+shader = ExtResource("9")
+shader_parameter/SCALING_FACTOR = 6.371e+06
+shader_parameter/R = 1.0
+shader_parameter/H = 0.0012
+shader_parameter/ALPHA_0 = 6371.0
+shader_parameter/OPT_INDEX = 1.00029
+shader_parameter/NUMBER_DENSITY = 2.504e+25
+shader_parameter/NEGLIGIBLE_H = 6.0
+shader_parameter/BRIGHTNESS_MULTIPLIER = 1.0
+shader_parameter/TAU_POINTS = 5
+shader_parameter/I_POINTS = 5
+
+[sub_resource type="QuadMesh" id="6"]
+material = SubResource("ShaderMaterial_x3svv")
+size = Vector2(2, 2)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_f7g5o"]
+render_priority = 0
+shader = ExtResource("7_l4fe7")
+shader_parameter/SCALING_FACTOR = 6.371e+06
+shader_parameter/R = 1.0
+shader_parameter/H = 0.0012
+shader_parameter/NEGLIGIBLE_H = 6.0
+shader_parameter/BRIGHTNESS_MULTIPLIER = 1.0
+
+[sub_resource type="QuadMesh" id="QuadMesh_l4fe7"]
+material = SubResource("ShaderMaterial_f7g5o")
+size = Vector2(2, 2)
+
+[node name="Node3D" type="Node3D"]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = ExtResource("7")
+surface_material_override/0 = SubResource("StandardMaterial3D_w2fgy")
+script = ExtResource("5")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1e+06)
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
+environment = ExtResource("5_l4fe7")
+fov = 37.8493
+near = 0.001
+script = ExtResource("4")
+
+[node name="BasicShader" type="MeshInstance3D" parent="Camera3D"]
+extra_cull_margin = 16384.0
+mesh = SubResource("6")
+
+[node name="FastShader" type="MeshInstance3D" parent="Camera3D"]
+visible = false
+extra_cull_margin = 16384.0
+mesh = SubResource("QuadMesh_l4fe7")
+
+[node name="RichTextLabel" type="RichTextLabel" parent="."]
+offset_right = 1020.0
+offset_bottom = 600.0
+script = ExtResource("3")
