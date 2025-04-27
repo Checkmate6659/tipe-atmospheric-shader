@@ -21,6 +21,7 @@ typedef struct {
 const vec3 COLORS = (vec3){612e-9, 549e-9, 464e-9}; //screen wavelengths in meters
 const vec3 IRRADIANCE = (vec3){1.25e9, 1.3e9, 1.2e9}; //solar irradiance in W*m^-3
 
+#define NPOINTS 64
 const int TAU_POINTS = 64;//42; //points for integration when calculating optical depth (BUMP IT UP)
 const int I_POINTS = 128; //points for integration when calculating light intensity
 
@@ -285,8 +286,6 @@ double normalized_4param(double lambda, double init_height, double init_lat, dou
     );
 }
 
-
-#define NPOINTS 64
 
 int main()
 {
