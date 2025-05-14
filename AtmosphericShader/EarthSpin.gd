@@ -8,7 +8,16 @@ extends MeshInstance3D
 #	if event.is_action("ui_left"):
 #		$".".rotate_y(-EARTH_SENSITIVITY);
 
+var spin = true
+
+func _input(event):
+	if event is InputEventKey and event.pressed:
+		if event.keycode == KEY_L:
+			spin = !spin
+
+
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):
-	$".".rotate_y(delta / (2*PI))
+	if spin:
+		$".".rotate_y(delta / (2*PI))
 
