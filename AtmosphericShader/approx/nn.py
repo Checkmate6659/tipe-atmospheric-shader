@@ -1,8 +1,9 @@
-print("LOADING...")
+print("LOADING LIBS...")
 
 from math import floor
 from random import randrange
 import numpy as np
+import subprocess
 
 import torch
 from torch import nn
@@ -13,46 +14,27 @@ device = "cpu"
 print(f"Using device: {device}")
 
 
-NPOINTS = 64
-#genfromtxt is a piece of crap, takes up LOADS of memory!
-raw_data = np.zeros(NPOINTS**4 * 3)
-with open("data.txt", "r") as fptr:
-    string = fptr.read().split(", ")[:-1]
-    for i, s in enumerate(string):
-        raw_data[i] = float(s)
+#generate samples OFF GRID! no more DUMB overfitting!
+def generate_samples(n):
+    sampler = subprocess.Popen(["sampler.exe", str(n)]) #call C program to generate n samples
+    sampler.communicate() #wait for it to finish
 
-#reshape it into a N^4 array, with 3 channels
-data = np.reshape(raw_data, (NPOINTS, NPOINTS, NPOINTS, NPOINTS, 3))
-print("Done loading")
+    #format: each element is ([x, y, z, w], np.array([red, green, blue]))
+    samples = []
 
+    with open("samples.txt", "r") as fptr:
+        lines = fptr.read().split("\n")[:-1]
+        for line in lines:
+            sx, sy, sz, sw, sr, sg, sb = line.split(",")
+            samples.append(([float(sx), float(sy), float(sz), float(sw)], np.array((float(sr), float(sg), float(sb)))))
 
-#Get non-uniformly picked random sample
-def get_random_sample():
-    ix = randrange(NPOINTS)
-    iy = randrange(NPOINTS)
-    iz = randrange(NPOINTS)
-    iw = randrange(NPOINTS)
+    #print(*samples[:100], sep="\n")
 
-    #look more straight forward (not up or down)
-    if randrange(3) > 0: #2/3 of the time
-        #non-uniform sampling of z: more focus on the middle area where the highest brightnesses, and errors, occur
-        raw = np.random.normal(0.5, 0.1) #tighter towards middle
-        iz = np.clip(floor(raw * NPOINTS), 0, NPOINTS - 1)
+    return samples
 
-    #spend more time in the evening part
-    if randrange(3) > 0: #2/3 of the time
-        #non-uniform sampling of y: more focus on the middle area where the highest brightnesses, and errors, occur
-        raw = np.random.normal(0.5, 0.1) #tighter towards middle
-        iy = np.clip(floor(raw * NPOINTS), 0, NPOINTS - 1)
-
-    x = np.linspace(1e-6, 1, NPOINTS)[ix] #since infinite altitude poses some issues, this has been done in the data generation
-    y = np.linspace(0, 1, NPOINTS)[iy]
-    z = np.linspace(0, 1, NPOINTS)[iz]
-    w = np.linspace(0, 1, NPOINTS)[iw]
-    label = data[ix][iy][iz][iw]
-
-    return x, y, z, w, label
-
+#Model definition
+#Conventional model, 4->16->16->3, used beforehand
+#trying to use L1, as well as slightly bigger nn, to increase significance of red and green components in loss
 #Model definition
 class Model(nn.Module):
     def __init__(self):
@@ -103,14 +85,14 @@ print("TRAIN_SIZE =", TRAIN_SIZE)
 print("TEST_SIZE =", TEST_SIZE)
 print("BATCH_SIZE =", BATCH_SIZE)
 
-#loss_fn = nn.L1Loss() #||.||_1 (kinda crap)
-loss_fn = nn.MSELoss() #using ||.||_2 for error, to be just a bit closer to ||.||_inf (TODO: better?)
+loss_fn = nn.L1Loss() #||.||_1 (to fail less on colors that are not blue...)
+#loss_fn = nn.MSELoss() #using ||.||_2 for error, to be just a bit closer to ||.||_inf (TODO: better?)
 #loss_fn = LpLoss() #||.||_4
-optimizer = torch.optim.SGD(model.parameters(), lr=5e-4)
 
-print("Loss function: L2; Optimizer: SGD; lr: 5e-4")
+#optimizer = torch.optim.SGD(model.parameters(), lr=1e-4) #NANS with unconventional models
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-6) #weight decay: regularization (normal: 1e-5)
 
-loss_for_printing = nn.MSELoss()
+print("Loss function: L1; Optimizer: Adam; lr: 1e-4, weight_decay: 1e-6")
 
 
 #TODO: this! https://stackoverflow.com/questions/72650995/pytorch-what-is-the-proper-way-to-minimize-and-maximize-the-same-loss
@@ -118,22 +100,17 @@ loss_for_printing = nn.MSELoss()
 
 
 #Trains on 1 single sample, and returns loss
-def train_iteration(model, loss_fn, optimizer):
+def train_iteration(model, loss_fn, optimizer, samples):
     model.train() #train mode
 
     #create batch
-    point = []
-    result = []
-    for _ in range(BATCH_SIZE):
-        x, y, z, w, lbl = get_random_sample()
-        point.append([x, y, z, w])
-        result.append(lbl)
+    point = [p for (p, r) in samples]
+    result = [r for (p, r) in samples]
 
     point = torch.as_tensor(point, dtype=torch.float32)  #float32 because weights are float32
     result = torch.as_tensor(np.array(result), dtype=torch.float32)
     #print(point)
     #print(result)
-
 
     # Compute prediction error
     pred = model(point)
@@ -148,21 +125,22 @@ def train_iteration(model, loss_fn, optimizer):
 
 #Test over lots of random samples
 #NOTE: it only does max loss on THOSE samples! not any potential outliers!
-#TODO: test on whole dataset
 def test(model, loss_fn):
     model.eval() #test mode
+
+    samples = generate_samples(TEST_SIZE)
 
     total_loss = 0
     max_loss = 0
     with torch.no_grad():
-        for _ in range(TEST_SIZE):
-            x, y, z, w, result = get_random_sample()
-            point = torch.as_tensor([x, y, z, w], dtype=torch.float32)
+        for i in range(TEST_SIZE):
+            point, result = samples[i]
+            point = torch.as_tensor(point, dtype=torch.float32)
             result = torch.as_tensor(result, dtype=torch.float32)
 
             # Compute prediction error
-            pred = model(point)
-            cur_loss = loss_for_printing(pred, result).item()
+            pred = model(torch.stack((point,))) #should fix model for this ig...
+            cur_loss = loss_fn(pred, result).item()
 
             total_loss += cur_loss
             if cur_loss > max_loss:
@@ -173,18 +151,23 @@ def test(model, loss_fn):
     print(f"Max loss: {max_loss:>8f}\n")
 
 #load checkpoint
-#model.load_state_dict(torch.load("nets/chkpt.nn", weights_only=True))
-#print("Starting from checkpoint")
+model.load_state_dict(torch.load("nets/chkpt.nn", weights_only=True))
+print("Starting from checkpoint")
 
-epochs = 64
-for t in range(epochs):
-    print(f"================ EPOCH {t+1} ================\n")
+iterations = 64
+for t in range(iterations):
+    print(f"================ ITERATION {t+1} ================\n")
 
     total_loss = 0
+    samples = generate_samples(BATCH_SIZE * TRAIN_SIZE)
     for i in range(TRAIN_SIZE):
-        total_loss += train_iteration(model, loss_fn, optimizer)
-        if i % 32 == 31:
-            total_loss /= 32
+        batch_samples = samples[:BATCH_SIZE] #separate relevant samples
+        samples = samples[BATCH_SIZE:]
+
+        #train and add up losses
+        total_loss += train_iteration(model, loss_fn, optimizer, batch_samples)
+        if i % 128 == 127:
+            total_loss /= 128
             print(f"Current avg loss: {total_loss:>8f}")
             total_loss = 0
 
