@@ -8,7 +8,7 @@ uniform float SCALING_FACTOR = 6371000.0; //conversion from scaled distance unit
 
 uniform float R = 1.0; //planet radius (scaled distance unit)
 uniform float H = 1.2e-3; //scale height (7.8km for earth)
-uniform float NEGLIGIBLE_H = 6.0; //why is increasing the 10.0 breaking everything? (30: no atmo; 5: white)
+uniform float NEGLIGIBLE_H = 100.0; //why is increasing the 10.0 breaking everything? (30: no atmo; 5: white)
 uniform float BRIGHTNESS_MULTIPLIER = 1.0; //divided by 10^6 at the end, editor doesn't support tiny values well
 
 const vec3 COLORS = vec3(612e-9, 549e-9, 464e-9); //screen wavelengths in meters
@@ -42,11 +42,10 @@ vec3 project(vec3 v, vec3 N)
 
 
 //transition function
-float leaky_relu(float x, float negative_slope)
+/*float silu(float x)
 {
-    if (x > 0.) return x;
-    return negative_slope * x;
-}
+  return 0.5 * x * (1. + tanh(x * 0.5));
+}*/
 
 
 
@@ -58,6 +57,76 @@ float leaky_relu(float x, float negative_slope)
 //-"latitude" of projected camera pos (<0 means far from sun, >0 means close to sun)
 //-angle with which the camera is looking down (>0 means towards surface, <0 means towards sky)
 //-angle with which the camera is looking to the side (can be picked >0 by symmetry too)
+/*vec3 light_intensity_4param(vec3 lambda, float init_height, float init_lat, float down_angle, float side_angle)
+{
+  //calculate normalized parameters
+  float l0[4] = { //layer 0
+    exp(-init_height / H),
+    init_lat / pi + 0.5,
+    down_angle / pi + 0.5,
+    side_angle / pi
+  };
+
+
+  float l1[8];
+  float l2[8];
+  float l3[8];
+  float l4[3];
+
+  //Initialize/bias l1 to l4
+  for (int i = 0; i < 8; i++)
+  {
+    l1[i] = L1B[i];
+    l2[i] = L2B[i];
+    l3[i] = L3B[i];
+  }
+  for (int i = 0; i < 3; i++)
+    l4[i] = L4B[i];
+
+
+  //First linear layer: l0 -> l1
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 4; j++)
+      l1[i] += l0[j] * L1W[4 * i + j];
+
+  //Activation function of l1
+  for(int i = 0; i < 8; i++) l1[i] = silu(l1[i]);
+
+  //Second linear layer: l1 -> l2
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      l2[i] += l1[j] * L2W[8 * i + j];
+
+  //Activation function of l2
+  for(int i = 0; i < 8; i++) l2[i] = silu(l2[i]);
+
+  //Third linear layer: l2 -> l3
+  for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+      l3[i] += l2[j] * L3W[8 * i + j];
+
+  //Activation function of l3
+  for(int i = 0; i < 8; i++) l3[i] = silu(l3[i]);
+
+  //Fourth linear layer: l3 -> l4
+  for (int i = 0; i < 3; i++)
+    for (int j = 0; j < 8; j++)
+      l4[i] += l3[j] * L4W[8 * i + j];
+
+
+  return vec3(l4[0], l4[1], l4[2]) * 600.;
+}*/
+
+
+
+//transition function
+float leaky_relu(float x, float negative_slope)
+{
+    if (x > 0.) return x;
+    return negative_slope * x;
+}
+
+//Old transition function
 vec3 light_intensity_4param(vec3 lambda, float init_height, float init_lat, float down_angle, float side_angle)
 {
   //calculate normalized parameters
@@ -107,6 +176,9 @@ vec3 light_intensity_4param(vec3 lambda, float init_height, float init_lat, floa
 
   return vec3(l3[0], l3[1], l3[2]);
 }
+
+
+
 
 //Compute the 4 necessary parameters for P_a and P_b
 vec3 normalize_params(vec3 P_a, vec3 P_b, vec3 lambda)
